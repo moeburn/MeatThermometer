@@ -11,6 +11,35 @@
 #include <ESPAsyncWebServer.h>
 #include "SPIFFS.h"
 #include <Arduino_JSON.h>
+#include <ezBuzzer.h> // ezBuzzer library
+#define BUZZER_PIN   23 
+#define ONE_WIRE_BUS 4  //PIN of the Maxim DS18B20 temperature sensor
+#define TIME_INTERVAL 1500
+
+ezBuzzer buzzer(BUZZER_PIN); 
+
+int melody[] = {
+  NOTE_E5, NOTE_E5, NOTE_E5,
+  NOTE_E5, NOTE_E5, NOTE_E5,
+  NOTE_E5, NOTE_G5, NOTE_C5, NOTE_D5,
+  NOTE_E5,
+  NOTE_F5, NOTE_F5, NOTE_F5, NOTE_F5,
+  NOTE_F5, NOTE_E5, NOTE_E5, NOTE_E5, NOTE_E5,
+  NOTE_E5, NOTE_D5, NOTE_D5, NOTE_E5,
+  NOTE_D5, NOTE_G5
+};
+
+// note durations: 4 = quarter note, 8 = eighth note, etc, also called tempo:
+int noteDurations[] = {
+  8, 8, 4,
+  8, 8, 4,
+  8, 8, 8, 8,
+  2,
+  8, 8, 8, 8,
+  8, 8, 8, 16, 16,
+  8, 8, 8, 8,
+  4, 4
+};
 
 AsyncWebServer server(80);
 
@@ -26,14 +55,12 @@ unsigned long timerDelay = 30000;
 
 
 
-
-
 #define NUMSAMPLES 200
 Average<float> sampleAvg(NUMSAMPLES);
+Average<float> sampleAvg2(NUMSAMPLES);
 
 Adafruit_ADS1115 ads;   /* Use this for the 16-bit version */
-#define ONE_WIRE_BUS 4  //PIN of the Maxim DS18B20 temperature sensor
-#define TIME_INTERVAL 1500
+
 char auth[] = "DU_j5IxaBQ3Dp-joTLtsB0DM70UZaEDd";
 
 bool displayon = true;
@@ -41,14 +68,14 @@ const char* ssid = "mikesnet";
 const char* password = "springchicken";
 
 SH1106Wire display(0x3c, SDA, SCL);
-float rawReading;
+float rawReading, rawReading2;
 float calibratedReading;
-double R2, probetemp;
-float V;
+double R2, probetemp, R22, probetemp2;
+float V, volts2;
 
-int settemp, etamins, etasecs;
+int etamins, etasecs;
 
-double oldtemp, tempdiff, eta;
+double oldtemp, tempdiff, eta, eta2, oldtemp2, tempdiff2;
 
 unsigned long debouncetime;
 
@@ -59,15 +86,15 @@ long double STEINHART_HART_COEF_C = 1.148231681E-7;
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature dallasTemp(&oneWire);
 NonBlockingDallas sensorDs18b20(&dallasTemp);
-float dallastemp, ft, fdt;
-int btns = 110;
+float dallastemp, ft, fdt, ft2;
+int settemp = 145;
 
 String getSensorReadings(){
 
   readings["sensor1"] = String(ft);
-  readings["sensor2"] = String(fdt);
+  readings["sensor2"] = String(ft2);
   readings["sensor3"] = String(settemp);
-  //readings["sensor4"] = String(165);
+  readings["sensor4"] = String(etamins);
 
   String jsonString = JSON.stringify(readings);
   return jsonString;
@@ -93,6 +120,7 @@ void handleTemperatureChange(float temperature, bool valid, int deviceIndex) {  
 #define button_switch 5
 #define button_switch2 18
 bool initialisation_complete = false;
+bool is2connected = false;
 
 //
 BLYNK_WRITE(V40) {
@@ -105,7 +133,11 @@ BLYNK_WRITE(V40) {
 }  // end of button_interrupt_handler
 
 
+
+
+
 void setup() {
+  pinMode(BUZZER_PIN,OUTPUT);
   analogReadResolution(12);
   Serial.begin(9600);
   while (!Serial) {}
@@ -167,28 +199,42 @@ server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
 
   // Start server
   server.begin();
+
+      int length = sizeof(noteDurations) / sizeof(int);
+      buzzer.playMelody(melody, noteDurations, length); // playing
 }
 
 void loop() {
+  buzzer.loop();
   int buttonfreq = 100;
   if (digitalRead(button_switch) == LOW){
+      if (buzzer.getState() != BUZZER_IDLE) {
+        buzzer.stop() ; // stop
+      }
       every(buttonfreq) {
-    btns--;
+    settemp--;
   }
   }
 
   if (digitalRead(button_switch2) == LOW){
+      if (buzzer.getState() != BUZZER_IDLE) {
+        buzzer.stop() ; // stop
+      }
       every(buttonfreq) {
-    btns++;
+    settemp++;
   }
   }
     Blynk.run();
   sensorDs18b20.update();
   //for (int i = 0; i <= NUMSAMPLES; i++) { //take NUMSAMPLES samples of analog reader...
   sampleAvg.push(ads.readADC_SingleEnded(0));
+  if (ads.readADC_SingleEnded(3) > 300) {is2connected = true;} else {is2connected = false;}
+  if (is2connected) {sampleAvg2.push(ads.readADC_SingleEnded(3));
+  rawReading2 = sampleAvg2.mean();}
   //delay(1);
   //}
   rawReading = sampleAvg.mean();             //...and average them.
+   
                                              //R1 on the voltage divider circuit is a fixed 21840 ohms.
                                              //R₂ = (-V * 21840) / (V - 3.3)
                                              //32767 is the maximum analog reading, which corresponds to 4.096 volts
@@ -198,52 +244,130 @@ void loop() {
   double log_r3 = log_r * log_r * log_r;
   //..using the Steinhart-Hart equation:
   probetemp = 1.0 / (STEINHART_HART_COEF_A + STEINHART_HART_COEF_B * log_r + STEINHART_HART_COEF_C * log_r3) - 273.15;
+  if (is2connected) {
+    volts2 = 3.3 - ((rawReading2 / 32767) * 4.096);  //Calculate volts of averaged analog reading
+    R22 = (-volts2 * 21840) / (volts2 - 3.3);             //Use volts to calculate resistance of thermistor probe
+    log_r = log(R22);                    //Use resistance of thermistor probe to calculate temperature...
+    log_r3 = log_r * log_r * log_r;
+    probetemp2 = 1.0 / (STEINHART_HART_COEF_A + STEINHART_HART_COEF_B * log_r + STEINHART_HART_COEF_C * log_r3) - 273.15;
+    if ((ft >= settemp) ||  (ft2 >= settemp)) {
+      if (buzzer.getState() == BUZZER_IDLE) {
+        int length = sizeof(noteDurations) / sizeof(int);
+        buzzer.playMelody(melody, noteDurations, length); // playing
+      }
+    }
+    else {
+      if (buzzer.getState() != BUZZER_IDLE) {
+        buzzer.stop() ; // stop
+      }
+    }
+  }
+  else {
+    if (ft >= settemp) {
+      if (buzzer.getState() == BUZZER_IDLE) {
+        int length = sizeof(noteDurations) / sizeof(int);
+        buzzer.playMelody(melody, noteDurations, length); // playing
+      }      
+    }
+    else {
+      if (buzzer.getState() != BUZZER_IDLE) {
+        buzzer.stop() ; // stop
+      }
+    }
+  }
   every(5000) {
-    settemp = btns;
     tempdiff = ft - oldtemp;
-    eta = ((settemp - ft)/tempdiff) * 5;
+    if (is2connected) {
+      tempdiff2 = ft2 - oldtemp2;
+       eta = (((settemp - ft)/tempdiff) * 5);
+        eta2 = (((settemp - ft2)/tempdiff2) * 5);
+        if ((eta2 > 0) && (eta2 < 1000) && (eta2 < eta)) {eta = eta2;}
+      Blynk.virtualWrite(V4, probetemp2);
+      oldtemp2 = ft2;
+    }
+    else
+    {
+      eta = (((settemp - ft)/tempdiff) * 5);
+    }
+    etamins = eta / 60;
     Blynk.virtualWrite(V1, R2);
     Blynk.virtualWrite(V2, probetemp);
     Blynk.virtualWrite(V3, dallastemp);
+    
     oldtemp = ft;
         events.send("ping",NULL,millis());
     events.send(getSensorReadings().c_str(),"new_readings" ,millis());
   }
   //Display all this on an OLED
-  String Rstring = "Set:";
-  String probestring = "T:";
-  String dallasstring = "ETA:";
-  if (displayon) {
+  String settempstring = "Set:";
+  String probestring = "T1:";
+  String probestring2 = "T2:";
+  String etastring = "ETA:";
+  
+  
     every(250) {
-      display.clear();
-      display.setFont(ArialMT_Plain_16);
-      display.setTextAlignment(TEXT_ALIGN_LEFT);
-      display.drawString(0, 0, Rstring);
-      display.setFont(ArialMT_Plain_16);
-      display.drawString(0, 16, probestring);
-      display.drawString(0, 40, dallasstring);
-      display.setFont(ArialMT_Plain_16);
-      display.setTextAlignment(TEXT_ALIGN_RIGHT);
-      Rstring = String(btns);
-      ft = (probetemp * 1.8) + 32;
-      fdt = (dallastemp * 1.8) + 32;
-      probestring = String(ft, 3) + "°F";
-      if (eta < 60){dallasstring = String(eta, 0) + "s";}
-      else { etasecs = int(eta) % 60; 
-      etamins = eta / 60;
-      dallasstring = String(etamins) + "m" + String(etasecs) + "s";
+          ft = (probetemp * 1.8) + 32;
+          if (is2connected) {ft2 = (probetemp2 * 1.8) + 32;} else {ft2 = 0;}
+          fdt = (dallastemp * 1.8) + 32;
+          
+        if (displayon) {
+          display.clear();
+          if (is2connected) {
+            display.setTextAlignment(TEXT_ALIGN_LEFT);
+            display.setFont(ArialMT_Plain_16);
+            display.drawString(0, 24, settempstring);
+            display.setFont(ArialMT_Plain_24);
+            display.drawString(0, 40, etastring);
+            display.drawHorizontalLine(0, 24, 128);
+            display.drawVerticalLine(64, 0, 24);
+            display.setTextAlignment(TEXT_ALIGN_RIGHT);
+            settempstring = String(settemp) + "°F";
+            probestring = String(ft, 1) + "¹";
+            probestring2 = String(ft2, 1) + "²";
+            //if (eta < 60){etastring = String(eta, 0) + "s";}
+            //else { etasecs = int(eta) % 60; 
+            if ((etamins < 1000) && (etamins > 0)) {etastring = String(etamins) + "min";}
+            else {etastring = "^^^min";}
+               // + String(etasecs) + "s";
+            //}
+            display.setFont(ArialMT_Plain_16);
+            display.drawString(128, 24, settempstring);
+            display.setFont(ArialMT_Plain_24);
+            display.drawString(128, 40, etastring);
+            display.setTextAlignment(TEXT_ALIGN_CENTER);
+            display.drawString(32, 0, probestring);
+            display.drawString(96, 0, probestring2);
+            
+          }
+          else {
+            display.setTextAlignment(TEXT_ALIGN_LEFT);
+            display.setFont(ArialMT_Plain_16);
+            display.drawString(0, 24, settempstring);
+            display.setFont(ArialMT_Plain_24);
+            display.drawString(0, 40, etastring);
+
+            display.setTextAlignment(TEXT_ALIGN_RIGHT);
+            settempstring = String(settemp) + "°F";
+            probestring = String(ft, 1) + "°F";
+            //if (eta < 60){etastring = String(eta, 0) + "s";}
+            //else { etasecs = int(eta) % 60; 
+            if ((etamins < 1000) && (etamins > 0)) {etastring = String(etamins) + "min";}
+            else {etastring = "^^^min";}
+            //}
+            display.setFont(ArialMT_Plain_16);
+            display.drawString(128, 24, settempstring);
+            display.setFont(ArialMT_Plain_24);
+            display.drawString(128, 40, etastring);
+            display.setTextAlignment(TEXT_ALIGN_CENTER);
+            display.drawString(64, 0, probestring);
+          }
+        display.display();
+        }  //End OLED code  */
+        else {
+          display.clear();
+          display.display();
+        }
       }
-      
-      display.drawString(128, 0, Rstring);
-      display.setFont(ArialMT_Plain_24);
-      display.drawString(128, 16, probestring);
-      display.drawString(128, 40, dallasstring);
-      display.display();
-    }  //End OLED code  */
-  } else {
-    display.clear();
-    display.display();
-  }
   Serial.print(probetemp);  //print the serial stuff only once every DS18B20 change so we don't flood the serial monitor with noise
   Serial.print(F(","));
   Serial.print(settemp);
@@ -251,5 +375,4 @@ void loop() {
   Serial.print(tempdiff);
   Serial.print(F(","));
   Serial.println(eta);
-
 }
