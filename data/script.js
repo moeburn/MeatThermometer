@@ -10,7 +10,7 @@ var chartT = new Highcharts.Chart({
   },
   series: [
     {
-      name: 'Temperature #1',
+      name: 'Temp #1 (&deg;F)',
       type: 'line',
       color: '#101D42',
       marker: {
@@ -20,7 +20,7 @@ var chartT = new Highcharts.Chart({
       }
     },
     {
-      name: 'Temperature #2',
+      name: 'Temp #2 (&deg;F)',
       type: 'line',
       color: '#00A6A6',
       marker: {
@@ -30,7 +30,7 @@ var chartT = new Highcharts.Chart({
       }
     },
     {
-      name: 'Set Temp',
+      name: 'Set Temp (&deg;F)',
       type: 'line',
       color: '#8B2635',
       marker: {
@@ -39,7 +39,16 @@ var chartT = new Highcharts.Chart({
         fillColor: '#8B2635',
       }
     },
-
+	{
+	  name: 'ETA (mins)',
+      type: 'line',
+      color: '#71B48D',
+      marker: {
+        symbol: 'triangle-down',
+        radius: 3,
+        fillColor: '#71B48D',
+      }
+    },
   ],
     plotOptions: {
     line: { animation: false,
@@ -79,7 +88,7 @@ function plotTemperature(jsonValue) {
     var y = Number(jsonValue[key]);
     console.log(y);
 
-    if(chartT.series[i].data.length > 40) {
+    if(chartT.series[i].data.length > 240) {
       chartT.series[i].addPoint([x, y], true, true, true);
     } else {
       chartT.series[i].addPoint([x, y], true, false, true);
@@ -96,6 +105,10 @@ function getReadings(){
       var myObj = JSON.parse(this.responseText);
       console.log(myObj);
       plotTemperature(myObj);
+	  document.getElementById("sensor1").innerHTML = myObj.sensor1;
+	  document.getElementById("sensor2").innerHTML = myObj.sensor2;
+	  document.getElementById("sensor3").innerHTML = myObj.sensor3;
+	  document.getElementById("sensor4").innerHTML = myObj.sensor4;
     }
   };
   xhr.open("GET", "/readings", true);
@@ -124,5 +137,10 @@ if (!!window.EventSource) {
     var myObj = JSON.parse(e.data);
     console.log(myObj);
     plotTemperature(myObj);
+	document.getElementById("sensor1").innerHTML = myObj.sensor1;
+	document.getElementById("sensor2").innerHTML = myObj.sensor2;
+	document.getElementById("sensor3").innerHTML = myObj.sensor3;
+	document.getElementById("sensor4").innerHTML = myObj.sensor4;
+	
   }, false);
 }
