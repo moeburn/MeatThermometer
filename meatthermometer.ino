@@ -4,17 +4,23 @@
 #include <Adafruit_ADS1X15.h>
 #include <BlynkSimpleEsp32.h>
 #include <WiFi.h>
-#include <OneWire.h>
-#include <DallasTemperature.h>
-#include <NonBlockingDallas.h>
+//#include <OneWire.h>
+//#include <DallasTemperature.h>
+//#include <NonBlockingDallas.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+#include <AsyncElegantOTA.h>
 #include "SPIFFS.h"
 #include <Arduino_JSON.h>
 #include <ezBuzzer.h> // ezBuzzer library
+
 #define BUZZER_PIN   23 
+#define button_switch 5
+#define button_switch2 18
 #define ONE_WIRE_BUS 4  //PIN of the Maxim DS18B20 temperature sensor
 #define TIME_INTERVAL 1500
+#define TEMP1_ADC 3
+#define TEMP2_ADC 0
 
 ezBuzzer buzzer(BUZZER_PIN); 
 
@@ -67,7 +73,7 @@ bool displayon = true;
 const char* ssid = "mikesnet";
 const char* password = "springchicken";
 
-SH1106Wire display(0x3c, SDA, SCL);
+SH1106Wire display(0x3c, SDA, SCL, GEOMETRY_128_64, I2C_ONE, 400000);
 float rawReading, rawReading2;
 float calibratedReading;
 double R2, probetemp, R22, probetemp2;
@@ -83,9 +89,9 @@ long double STEINHART_HART_COEF_A = 0.7322291889E-3;
 long double STEINHART_HART_COEF_B = 2.132158182E-4;
 long double STEINHART_HART_COEF_C = 1.148231681E-7;
 
-OneWire oneWire(ONE_WIRE_BUS);
-DallasTemperature dallasTemp(&oneWire);
-NonBlockingDallas sensorDs18b20(&dallasTemp);
+//OneWire oneWire(ONE_WIRE_BUS);
+//DallasTemperature dallasTemp(&oneWire);
+//NonBlockingDallas sensorDs18b20(&dallasTemp);
 float dallastemp, ft, fdt, ft2;
 int settemp = 145;
 
@@ -117,8 +123,7 @@ void handleTemperatureChange(float temperature, bool valid, int deviceIndex) {  
   static uint32_t __every__##interval = millis(); \
   if (millis() - __every__##interval >= interval && (__every__##interval = millis()))
 
-#define button_switch 5
-#define button_switch2 18
+
 bool initialisation_complete = false;
 bool is2connected = false;
 
@@ -148,9 +153,10 @@ void setup() {
   
   Serial.println("");
   display.init();
+  //display.flipScreenVertically();
   display.setFont(Monospaced_plain_8);
   display.setTextAlignment(TEXT_ALIGN_LEFT);
-  display.setBrightness(100);
+  display.setBrightness(200);
   display.drawStringMaxWidth(0, 0, 64, "Connecting...");
   display.display();
   while (WiFi.status() != WL_CONNECTED && millis() < 15000) {
@@ -164,9 +170,9 @@ void setup() {
   display.setTextAlignment(TEXT_ALIGN_LEFT);
   Blynk.config(auth, IPAddress(192, 168, 50, 197), 8080);
   Blynk.connect();
-  sensorDs18b20.begin(NonBlockingDallas::resolution_12, NonBlockingDallas::unit_C, TIME_INTERVAL);  //use non-blocking DS18b20 library
+ // sensorDs18b20.begin(NonBlockingDallas::resolution_12, NonBlockingDallas::unit_C, TIME_INTERVAL);  //use non-blocking DS18b20 library
 
-  sensorDs18b20.onTemperatureChange(handleTemperatureChange);  //only notice when DS18B20 changes
+ // sensorDs18b20.onTemperatureChange(handleTemperatureChange);  //only notice when DS18B20 changes
   display.clear();
   display.display();
   pinMode(button_switch, INPUT_PULLUP);
@@ -197,7 +203,7 @@ server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
   });
   server.addHandler(&events);
 
-  // Start server
+  AsyncElegantOTA.begin(&server);
   server.begin();
 
       int length = sizeof(noteDurations) / sizeof(int);
@@ -225,11 +231,11 @@ void loop() {
   }
   }
     Blynk.run();
-  sensorDs18b20.update();
+  //sensorDs18b20.update();
   //for (int i = 0; i <= NUMSAMPLES; i++) { //take NUMSAMPLES samples of analog reader...
-  sampleAvg.push(ads.readADC_SingleEnded(0));
-  if (ads.readADC_SingleEnded(3) > 300) {is2connected = true;} else {is2connected = false;}
-  if (is2connected) {sampleAvg2.push(ads.readADC_SingleEnded(3));
+  sampleAvg.push(ads.readADC_SingleEnded(TEMP1_ADC));
+  if (ads.readADC_SingleEnded(TEMP2_ADC) > 300) {is2connected = true;} else {is2connected = false;}
+  if (is2connected) {sampleAvg2.push(ads.readADC_SingleEnded(TEMP2_ADC));
   rawReading2 = sampleAvg2.mean();}
   //delay(1);
   //}
@@ -275,8 +281,14 @@ void loop() {
       }
     }
   }
-  every(5000) {
-    tempdiff = ft - oldtemp;
+  every(10000) {
+
+        events.send("ping",NULL,millis());
+    events.send(getSensorReadings().c_str(),"new_readings" ,millis());
+  }
+
+  every(30000) {
+        tempdiff = ft - oldtemp;
     if (is2connected) {
       tempdiff2 = ft2 - oldtemp2;
        eta = (((settemp - ft)/tempdiff) * 5);
@@ -292,11 +304,9 @@ void loop() {
     etamins = eta / 60;
     Blynk.virtualWrite(V1, R2);
     Blynk.virtualWrite(V2, probetemp);
-    Blynk.virtualWrite(V3, dallastemp);
+    //Blynk.virtualWrite(V3, dallastemp);
     
     oldtemp = ft;
-        events.send("ping",NULL,millis());
-    events.send(getSensorReadings().c_str(),"new_readings" ,millis());
   }
   //Display all this on an OLED
   String settempstring = "Set:";
