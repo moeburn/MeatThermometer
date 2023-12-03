@@ -9,14 +9,14 @@
 //#include <NonBlockingDallas.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <AsyncElegantOTA.h>
+#include <ElegantOTA.h>
 #include "SPIFFS.h"
 #include <Arduino_JSON.h>
 #include <ezBuzzer.h> // ezBuzzer library
 
-#define BUZZER_PIN   23 
-#define button_switch 5
-#define button_switch2 18
+#define BUZZER_PIN   25 
+#define button_switch 18
+#define button_switch2 5
 #define ONE_WIRE_BUS 4  //PIN of the Maxim DS18B20 temperature sensor
 #define TIME_INTERVAL 1500
 #define TEMP1_ADC 3
@@ -153,7 +153,7 @@ void setup() {
   
   Serial.println("");
   display.init();
-  //display.flipScreenVertically();
+  display.flipScreenVertically();
   display.setFont(Monospaced_plain_8);
   display.setTextAlignment(TEXT_ALIGN_LEFT);
   display.setBrightness(200);
@@ -203,7 +203,8 @@ server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
   });
   server.addHandler(&events);
 
-  AsyncElegantOTA.begin(&server);
+  ElegantOTA.begin(&server);
+  ElegantOTA.setAutoReboot(true);
   server.begin();
 
       int length = sizeof(noteDurations) / sizeof(int);
@@ -287,7 +288,7 @@ void loop() {
     events.send(getSensorReadings().c_str(),"new_readings" ,millis());
   }
 
-  every(30000) {
+  every(9000) {
         tempdiff = ft - oldtemp;
     if (is2connected) {
       tempdiff2 = ft2 - oldtemp2;
@@ -322,6 +323,7 @@ void loop() {
           
         if (displayon) {
           display.clear();
+          display.drawRect(0,0,128,64);
           if (is2connected) {
             display.setTextAlignment(TEXT_ALIGN_LEFT);
             display.setFont(ArialMT_Plain_16);
@@ -362,6 +364,7 @@ void loop() {
             //if (eta < 60){etastring = String(eta, 0) + "s";}
             //else { etasecs = int(eta) % 60; 
             if ((etamins < 1000) && (etamins > 0)) {etastring = String(etamins) + "min";}
+            else if (etamins == 0) {etastring = "0 min";}
             else {etastring = "^^^min";}
             //}
             display.setFont(ArialMT_Plain_16);
