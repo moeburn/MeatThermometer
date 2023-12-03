@@ -52,7 +52,7 @@ var chartT = new Highcharts.Chart({
   ],
     plotOptions: {
     line: { animation: false,
-      dataLabels: { enabled: true }
+      dataLabels: { enabled: false }
     },
     series: { color: '#059e8a' }
   },
