@@ -27,6 +27,7 @@ XT_DAC_Audio_Class DacAudio(25,0);   //Set up the DAC on pin 25
 #define TIME_INTERVAL 1500
 #define TEMP1_ADC 3
 #define TEMP2_ADC 0
+#define BATTERY_ADC 1
 
 AsyncWebServer server(80);
 
@@ -53,6 +54,7 @@ float rawReading, rawReading2;
 float calibratedReading;
 double R2, probetemp, R22, probetemp2;
 float V, volts2;
+float batteryVolts;
 
 int etamins, etasecs;
 
@@ -213,7 +215,7 @@ void loop() {
   //sensorDs18b20.update();
 
   sampleAvg.push(ads.readADC_SingleEnded(TEMP1_ADC));  //Add one sample of the temperature probes to the rolling average
-  if (ads.readADC_SingleEnded(TEMP2_ADC) > 300) {is2connected = true;} else {is2connected = false;}  //If probe2 reading is unreasonably low, assume it is disconnected and we are reading noise
+  if (ads.readADC_SingleEnded(TEMP2_ADC) > 1500) {is2connected = true;} else {is2connected = false;}  //If probe2 reading is unreasonably low, assume it is disconnected and we are reading noise
   if (is2connected) {sampleAvg2.push(ads.readADC_SingleEnded(TEMP2_ADC));
   rawReading2 = sampleAvg2.mean();}  //Use the rolling average for calculating other variables
   rawReading = sampleAvg.mean();            
@@ -261,6 +263,7 @@ void loop() {
   }
 
   every(15000) {  //Update the ETA and Blynk interface once every 15 seconds
+  batteryVolts = ads.computeVolts(ads.readADC_SingleEnded(BATTERY_ADC)) * 2.0;
     tempdiff = ft - oldtemp;
     if (is2connected) {  //If 2nd probe is connected, calculate whichever ETA is sooner in seconds
       tempdiff2 = ft2 - oldtemp2;
@@ -277,6 +280,7 @@ void loop() {
     etamins = eta / 60;  //cast it to int and divide it by 60 to get minutes with no remainder, ignore seconds because of inaccuracy
     //if (etamins > 4) {etamins += 2;}  //Add 2 extra minutes when reading is over 4 minutes due to typical slowing of heating at the end
     Blynk.virtualWrite(V2, probetemp);
+    Blynk.virtualWrite(V5, batteryVolts);
     //Blynk.virtualWrite(V3, dallastemp);
     oldtemp = ft;
   }
@@ -291,12 +295,13 @@ every(250) {  //Update OLED display, do math once every 250ms
       String probestring = "T1:";
       String probestring2 = "T2:";
       String etastring = "ETA:";
+      String batterystring = String(batteryVolts) + "v";
       display.clear();
       //display.drawRect(0,0,128,64);  //Draw display border, for debugging/mounting purposes
       if (is2connected) {  //If there's two probes connected
         display.setTextAlignment(TEXT_ALIGN_LEFT);  //Set the left-justified strings as the data labels
         display.setFont(ArialMT_Plain_16);
-        display.drawString(0, 24, settempstring);
+        display.drawString(0, 24, batterystring);
         display.setFont(ArialMT_Plain_24);
         display.drawString(0, 40, etastring);
         display.drawHorizontalLine(0, 24, 128);
@@ -327,7 +332,7 @@ every(250) {  //Update OLED display, do math once every 250ms
         display.drawString(0, 40, etastring);
 
         display.setTextAlignment(TEXT_ALIGN_RIGHT);
-        settempstring = String(settemp) + "°F";
+        settempstring = ">" + String(settemp) + "°F";
         probestring = String(ft, 1) + "°F";
         //if (eta < 60){etastring = String(eta, 0) + "s";}
         //else { etasecs = int(eta) % 60; 
