@@ -175,6 +175,7 @@ void setup() {
   server.addHandler(&events);
   AsyncElegantOTA.begin(&server);  //Start the OTA firmware updater on /update
   server.begin();
+  batteryVolts = ads.computeVolts(ads.readADC_SingleEnded(BATTERY_ADC)) * 2.0;
 }
 
 
@@ -307,7 +308,7 @@ every(250) {  //Update OLED display, do math once every 250ms
         display.drawHorizontalLine(0, 24, 128);
         display.drawVerticalLine(64, 0, 24);
         display.setTextAlignment(TEXT_ALIGN_RIGHT); //Right justify
-        settempstring = String(settemp) + "°F";  //Set the right-justified strings  as the data plus the unit
+        settempstring = ">" + String(settemp) + "°F";  //Set the right-justified strings  as the data plus the unit
         probestring = String(ft, 1) + "¹";  //Use superscript 1 and 2 instead of degree signs when 2 probes are connected
         probestring2 = String(ft2, 1) + "²";
         //if (eta < 60){etastring = String(eta, 0) + "s";}  //Removed seconds display due to inaccuracy
@@ -316,7 +317,7 @@ every(250) {  //Update OLED display, do math once every 250ms
         else {etastring = "^^^min";}  //Else display "^^^"
             // + String(etasecs) + "s";
         //}
-        display.setFont(ArialMT_Plain_16);  //Draw the right justified strings
+        display.setFont(ArialMT_Plain_16);  //Draw the right justified satrings
         display.drawString(128, 24, settempstring);
         display.setFont(ArialMT_Plain_24);
         display.drawString(128, 40, etastring);
@@ -327,7 +328,7 @@ every(250) {  //Update OLED display, do math once every 250ms
       else {  //Else if there's only one probe connected
         display.setTextAlignment(TEXT_ALIGN_LEFT);
         display.setFont(ArialMT_Plain_16);
-        display.drawString(0, 24, settempstring);
+        display.drawString(0, 24, batterystring);
         display.setFont(ArialMT_Plain_24);
         display.drawString(0, 40, etastring);
 
